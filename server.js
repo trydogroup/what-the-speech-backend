@@ -1,183 +1,281 @@
 /**
- * BACKEND SERVER (Node.js + Express)
- * 
- * ---------------------------------------------------------
- * COMMAND TO START SERVER:
- * cd backend
- * npm install
- * npm start
- * ---------------------------------------------------------
+ * WTS Backend Server (Final Version)
+ * ----------------------------------
+ * Supports:
+ * - Admin login
+ * - User login (email + password)
+ * - Razorpay payment → user + license auto-creation
+ * - License activation
+ * - Demo system (1-hour limit)
+ * - Admin dashboard endpoints
  */
 
-require('dotenv').config(); // Load environment variables
-const express = require('express');
-const cors = require('cors');
-const Razorpay = require('razorpay');
-const crypto = require('crypto');
-const nodemailer = require('nodemailer');
-const fs = require('fs');
-const path = require('path');
+require("dotenv").config();
+const express = require("express");
+const cors = require("cors");
+const crypto = require("crypto");
+const Razorpay = require("razorpay");
+const fs = require("fs");
+const path = require("path");
 
-// --- YOUR LIVE CONFIGURATION ---
-const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || 'rzp_live_Rro6u2W3PK2IXg';
-const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || 'd4RvGmN7biALUbJ7Pxoe6xMC';
-const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || 'trydo_wts_2025';
+// ----------------------
+// ENV CONFIG
+// ----------------------
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "veer@trydo.com";
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "supersecret";
 
-// EMAIL CONFIGURATION
-// You MUST generate an App Password: https://myaccount.google.com/apppasswords
-// Do NOT use your regular Gmail login password.
-const EMAIL_USER = process.env.EMAIL_USER || 'grow@trydoschool.com'; 
-const EMAIL_PASS = process.env.EMAIL_PASS || 'YOUR_GMAIL_APP_PASSWORD'; // <--- REPLACE THIS BEFORE RUNNING
+const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || "rzp_live_Rro6u2W3PK2IXg";
+const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || "d4RvGmN7biALUbJ7Pxoe6xMC";
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || "trydo_wts_2025";
 
 const PRICE_INR = 499;
 
+// ----------------------
+// APP INIT
+// ----------------------
 const app = express();
-// Enable CORS for all origins to prevent 'Failed to fetch' due to security blocking
-app.use(cors({ origin: true }));
+app.use(cors());
 app.use(express.json());
 
-// Initialize Razorpay
 const razorpay = new Razorpay({
   key_id: RAZORPAY_KEY_ID,
   key_secret: RAZORPAY_KEY_SECRET,
 });
 
-// --- DATABASE (File Based) ---
-const DB_FILE = path.join(__dirname, 'database.json');
-if (!fs.existsSync(DB_FILE)) {
-  fs.writeFileSync(DB_FILE, JSON.stringify({ payments: [], licenses: [], demoUsage: {} }, null, 2));
-}
+// ----------------------
+// DATABASE
+// ----------------------
+const DB_FILE = path.join(__dirname, "database.json");
 
 function readDB() {
-  try { return JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch (e) { return { payments: [], licenses: [], demoUsage: {} }; }
+  try {
+    return JSON.parse(fs.readFileSync(DB_FILE));
+  } catch {
+    return { users: [], payments: [], licenses: [], demoUsage: {} };
+  }
 }
-function writeDB(data) { fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2)); }
 
-// --- HELPERS ---
+function writeDB(data) {
+  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+}
+
+// ----------------------
+// HELPERS
+// ----------------------
+function generatePassword() {
+  return Math.random().toString(36).substring(2, 10);
+}
+
 function generateLicenseKey() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; 
-  const segment = () => Array(5).fill(0).map(() => chars.charAt(Math.floor(Math.random() * chars.length))).join('');
-  return `WTS-${segment()}-${segment()}-${segment()}-${segment()}`;
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const seg = () => Array(5).fill(0).map(() => chars[Math.floor(Math.random() * chars.length)]).join('');
+  return `WTS-${seg()}-${seg()}-${seg()}-${seg()}`;
 }
 
-async function sendLicenseEmail(email, licenseKey, paymentId) {
-  if (EMAIL_PASS === 'YOUR_GMAIL_APP_PASSWORD') {
-    console.error("!!! EMAIL NOT SENT: Password not configured in backend/server.js !!!");
-    return false;
+// ----------------------
+// STATUS CHECK
+// ----------------------
+app.get("/api/status", (req, res) => {
+  res.json({ status: "running", mode: "LIVE", price: PRICE_INR });
+});
+
+// ----------------------
+// ADMIN LOGIN
+// ----------------------
+app.post("/api/admin/login", (req, res) => {
+  const { email, password } = req.body;
+
+  if (email === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
+    return res.json({ success: true });
   }
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: EMAIL_USER, pass: EMAIL_PASS }
+
+  return res.status(401).json({ success: false, message: "Invalid admin credentials" });
+});
+
+// ----------------------
+// ADMIN DASHBOARD ENDPOINTS
+// ----------------------
+app.get("/api/admin/users", (req, res) => {
+  res.json(readDB().users);
+});
+
+app.get("/api/admin/payments", (req, res) => {
+  res.json(readDB().payments);
+});
+
+app.get("/api/admin/licenses", (req, res) => {
+  res.json(readDB().licenses);
+});
+
+app.get("/api/admin/demo-usage", (req, res) => {
+  res.json(readDB().demoUsage);
+});
+
+// ----------------------
+// USER LOGIN (email + password)
+// ----------------------
+app.post("/api/user/login", (req, res) => {
+  const { email, password } = req.body;
+  const db = readDB();
+
+  const user = db.users.find((u) => u.email === email && u.password === password);
+  if (!user) return res.status(401).json({ success: false, message: "Invalid credentials" });
+
+  return res.json({
+    success: true,
+    user: {
+      email: user.email,
+      licenseKey: user.licenseKey || null,
+      activated: user.activated || false,
+    },
   });
-
-  const mailOptions = {
-    from: `"WTS By Trydo" <${EMAIL_USER}>`,
-    to: email,
-    subject: 'Your What The Speech License Key',
-    html: `
-      <div style="font-family: sans-serif; padding: 20px; color: #333;">
-        <h2>Thank you for your purchase!</h2>
-        <p>Your license key for What The Speech is below:</p>
-        <div style="background: #f4f4f4; padding: 15px; margin: 20px 0; border-radius: 5px;">
-          <code style="font-size: 20px; font-weight: bold; letter-spacing: 2px;">${licenseKey}</code>
-        </div>
-        <p>To activate, open the app, go to Settings, and enter this key.</p>
-        <p>Payment ID: ${paymentId}</p>
-        <p>- WTS By Trydo Team</p>
-      </div>
-    `
-  };
-
-  try {
-    await transporter.sendMail(mailOptions);
-    console.log(`[EMAIL] Sent to ${email}`);
-    return true;
-  } catch (error) {
-    console.error('[EMAIL ERROR]', error);
-    return false;
-  }
-}
-
-// --- ENDPOINTS ---
-
-// 1. STATUS CHECK
-app.get('/api/status', (req, res) => {
-  res.json({ status: 'running', mode: 'LIVE', price: PRICE_INR });
 });
 
-// 2. CREATE ORDER
-app.post('/api/payment/create-order', async (req, res) => {
-  console.log("[API] Create Order Request Received");
-  try {
-    const options = {
-      amount: PRICE_INR * 100, 
-      currency: 'INR',
-      receipt: `rcpt_${Date.now()}`,
-      payment_capture: 1 
-    };
-    const order = await razorpay.orders.create(options);
-    console.log(`[RAZORPAY] Order Created: ${order.id}`);
-    res.json(order);
-  } catch (error) {
-    console.error('[RAZORPAY ERROR]', error);
-    res.status(500).json({ error: error.message });
+// ----------------------
+// LICENSE ACTIVATION
+// ----------------------
+app.post("/api/user/activate-license", (req, res) => {
+  const { email, licenseKey } = req.body;
+  const db = readDB();
+
+  const lic = db.licenses.find((l) => l.key === licenseKey);
+  if (!lic) return res.status(400).json({ success: false, message: "Invalid license key" });
+
+  lic.activated = true;
+
+  // link to user
+  let user = db.users.find((u) => u.email === email);
+  if (!user) {
+    user = { email, password: null };
+    db.users.push(user);
   }
+  user.licenseKey = licenseKey;
+  user.activated = true;
+  user.activationDate = new Date();
+
+  writeDB(db);
+
+  return res.json({ success: true, message: "License activated" });
 });
 
-// 3. WEBHOOK
-app.post('/api/payment/webhook', async (req, res) => {
-  const secret = WEBHOOK_SECRET;
-  const shasum = crypto.createHmac('sha256', secret);
-  shasum.update(JSON.stringify(req.body));
-  const digest = shasum.digest('hex');
+// ----------------------
+// DEMO SYSTEM
+// ----------------------
+app.post("/api/demo/check", (req, res) => {
+  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+  const db = readDB();
 
-  if (digest !== req.headers['x-razorpay-signature']) {
-    console.error('[WEBHOOK] Invalid Signature');
-    return res.status(400).json({ status: 'failure' });
-  }
-
-  const event = req.body.event;
-  console.log(`[WEBHOOK] Event: ${event}`);
-
-  if (event === 'payment.captured') {
-    const { id, email, amount, status } = req.body.payload.payment.entity;
-    const licenseKey = generateLicenseKey();
-    
-    // Save to DB
-    const db = readDB();
-    if (!db.payments.find(p => p.payment_id === id)) {
-      db.payments.push({ id, email, amount, status, date: new Date() });
-      db.licenses.push({ key: licenseKey, email, payment_id: id, activated: false });
-      writeDB(db);
-      
-      if (email) await sendLicenseEmail(email, licenseKey, id);
+  if (db.demoUsage[ip]) {
+    const elapsed = Date.now() - db.demoUsage[ip];
+    if (elapsed < 60 * 60 * 1000) {
+      return res.json({ allowed: false, remaining: 60 * 60 * 1000 - elapsed });
     }
   }
-  res.json({ status: 'ok' });
-});
 
-// DEMO Endpoints
-app.post('/api/check-demo', (req, res) => {
-  const { fingerprint } = req.body;
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-  const db = readDB();
-  if (db.demoUsage[ip] || db.demoUsage[fingerprint]) return res.status(403).json({ allowed: false });
   return res.json({ allowed: true });
 });
 
-app.post('/api/record-demo', (req, res) => {
-  const { fingerprint } = req.body;
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+app.post("/api/demo/start", (req, res) => {
+  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
   const db = readDB();
+
   db.demoUsage[ip] = Date.now();
-  db.demoUsage[fingerprint] = Date.now();
   writeDB(db);
+
   res.json({ success: true });
 });
 
-// Start Server on 0.0.0.0 to ensure external access in containers
+// ----------------------
+// ADMIN RESET DEMO (for you)
+// ----------------------
+app.post("/api/admin/reset-demo", (req, res) => {
+  const ip = req.body.ip;
+  const db = readDB();
+
+  delete db.demoUsage[ip];
+  writeDB(db);
+
+  res.json({ success: true });
+});
+
+// ----------------------
+// RAZORPAY ORDER
+// ----------------------
+app.post("/api/payment/create-order", async (req, res) => {
+  try {
+    const order = await razorpay.orders.create({
+      amount: PRICE_INR * 100,
+      currency: "INR",
+      receipt: `rcpt_${Date.now()}`,
+      payment_capture: 1,
+    });
+
+    res.json(order);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ----------------------
+// RAZORPAY WEBHOOK
+// ----------------------
+app.post("/api/payment/webhook", (req, res) => {
+  const signature = req.headers["x-razorpay-signature"];
+
+  const shasum = crypto.createHmac("sha256", WEBHOOK_SECRET);
+  shasum.update(JSON.stringify(req.body));
+  const digest = shasum.digest("hex");
+
+  if (digest !== signature) {
+    return res.status(400).json({ status: "failure" });
+  }
+
+  const event = req.body.event;
+
+  if (event === "payment.captured") {
+    const payment = req.body.payload.payment.entity;
+    const email = payment.email;
+
+    const db = readDB();
+
+    const password = generatePassword();
+    const licenseKey = generateLicenseKey();
+
+    // Save payment
+    db.payments.push({
+      id: payment.id,
+      email,
+      amount: payment.amount,
+      status: payment.status,
+      date: new Date(),
+    });
+
+    // Save license
+    db.licenses.push({
+      key: licenseKey,
+      email,
+      payment_id: payment.id,
+      activated: false,
+    });
+
+    // Save user
+    db.users.push({
+      email,
+      password,
+      licenseKey,
+      activated: false,
+    });
+
+    writeDB(db);
+  }
+
+  return res.json({ status: "ok" });
+});
+
+// ----------------------
+// START SERVER
+// ----------------------
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Backend running on port ${PORT}`);
-  console.log(`Testing URL: http://localhost:${PORT}/api/status`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`WTS Backend Live on Port: ${PORT}`);
 });
