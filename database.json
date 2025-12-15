@@ -4,3 +4,15 @@
   "licenses": [],
   "demoUsage": {}
 }
+{
+  "users": [
+    {
+      "email": "veer@trydo.com",
+      "password": "supersecret",
+      "role": "admin"
+    }
+  ],
+  "payments": [],
+  "licenses": [],
+  "demoUsage": {}
+}
