@@ -271,6 +271,28 @@ app.post("/api/payment/webhook", (req, res) => {
 
   return res.json({ status: "ok" });
 });
+// ---------------------------------------------
+// ADMIN LOGIN ENDPOINT
+// ---------------------------------------------
+app.post('/api/admin/login', (req, res) => {
+  const { email, password } = req.body;
+
+  const db = readDB();
+  const admin = db.users.find(
+    (u) => u.email === email && u.role === "admin"
+  );
+
+  if (!admin) {
+    return res.status(404).json({ success: false, message: "Admin not found" });
+  }
+
+  if (admin.password !== password) {
+    return res.status(401).json({ success: false, message: "Invalid password" });
+  }
+
+  return res.json({ success: true, message: "Admin login successful" });
+});
+
 
 // ----------------------
 // START SERVER
