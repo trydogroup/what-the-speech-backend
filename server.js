@@ -178,6 +178,6 @@ app.post('/api/record-demo', (req, res) => {
 // Start Server on 0.0.0.0 to ensure external access in containers
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ Backend running on port ${PORT}`);
+  console.log(`Backend running on port ${PORT}`);
   console.log(`Testing URL: http://localhost:${PORT}/api/status`);
 });
