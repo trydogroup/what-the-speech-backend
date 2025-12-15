@@ -1,20 +1,6 @@
 {
-  "payments": [
-    {
-      "id": "dummy_payment_123",
-      "email": "testuser@trydo.com",
-      "amount": 49900,
-      "status": "captured",
-      "date": "2025-01-01T12:00:00.000Z"
-    }
-  ],
-  "licenses": [
-    {
-      "key": "WTS-TESTD-UMMYK-EY123-ABCDE",
-      "email": "testuser@trydo.com",
-      "payment_id": "dummy_payment_123",
-      "activated": false
-    }
-  ],
+  "users": [],
+  "payments": [],
+  "licenses": [],
   "demoUsage": {}
 }
