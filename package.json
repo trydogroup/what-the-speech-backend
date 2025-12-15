@@ -1,0 +1,21 @@
+{
+  "name": "what-the-speech-backend",
+  "version": "1.0.0",
+  "description": "Backend API for What The Speech",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "body-parser": "^1.20.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "nodemailer": "^6.9.13",
+    "razorpay": "^2.9.3"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
